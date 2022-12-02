@@ -68,7 +68,8 @@ Dispatcher::Device::Device(Dispatcher & parent, cl_context & clContext, cl_progr
 	m_kernelIterate(createKernel(clProgram, "eradicate2_iterate")),
 	m_memResult(clContext, m_clQueue, CL_MEM_READ_WRITE, ERADICATE2_MAX_SCORE + 1),
 	m_memMode(clContext, m_clQueue, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY, 1),
-	m_round(0)
+	m_round(0),
+	m_speed(20)
 {
 
 }
@@ -163,6 +164,40 @@ void Dispatcher::enqueueKernelDevice(Device & d, cl_kernel & clKernel, size_t wo
 	}
 }
 
+std::string Dispatcher::formatSpeed(double f) {
+	const std::string S = " KMGT";
+
+	unsigned int index = 0;
+	while (f > 1000.0f && index < S.size()) {
+		f /= 1000.0f;
+		++index;
+	}
+
+	std::ostringstream ss;
+	ss << std::fixed << std::setprecision(3) << (double)f << " " << S[index] << "H/s";
+	return ss.str();
+}
+
+// This is run when m_mutex is held.
+void Dispatcher::printSpeed() {
+	++m_countPrint;
+	if( m_countPrint > m_vDevices.size() ) {
+		std::string strGPUs;
+		double speedTotal = 0;
+		unsigned int i = 0;
+		for (auto & e : m_vDevices) {
+			const auto curSpeed = e->m_speed.getSpeed();
+			speedTotal += curSpeed;
+			strGPUs += " GPU" + lexical_cast::toString(e->m_index) + ": " + formatSpeed(curSpeed);
+			++i;
+		}
+
+		const std::string strVT100ClearLine = "\33[2K\r";
+		std::cerr << strVT100ClearLine << "Total: " << formatSpeed(speedTotal) << " -" << strGPUs << '\r' << std::flush;
+		m_countPrint = 0;
+	}
+}
+
 void Dispatcher::deviceDispatch(Device & d) {
 	// Check result
 	for (auto i = ERADICATE2_MAX_SCORE; i > m_clScoreMax; --i) {
@@ -184,11 +219,14 @@ void Dispatcher::deviceDispatch(Device & d) {
 			break;
 		}
 	}
-
-	d.m_parent.m_speed.update(d.m_parent.m_size, d.m_index);
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);	
+		d.m_speed.sample(m_size);
+		printSpeed();
+	}
 
 	if (m_quit) {
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::lock_guard<std::mutex> lock(m_mutex);	
 		if (--m_countRunning == 0) {
 			clSetUserEventStatus(m_eventFinished, CL_COMPLETE);
 		}

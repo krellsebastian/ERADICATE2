@@ -15,7 +15,7 @@
 #endif
 
 #include "CLMemory.hpp"
-#include "Speed.hpp"
+#include "SpeedSample.hpp"
 #include "types.hpp"
 
 #define ERADICATE2_SPEEDSAMPLES 20
@@ -53,6 +53,7 @@ class Dispatcher {
 			CLMemory<mode> m_memMode;
 
 			cl_uint m_round;
+			SpeedSample m_speed;
 		};
 
 	public:
@@ -88,7 +89,6 @@ class Dispatcher {
 		// Run information
 		std::mutex m_mutex;
 		std::chrono::time_point<std::chrono::steady_clock> timeStart;
-		Speed m_speed;
 		unsigned int m_countPrint;
 		unsigned int m_countRunning;
 		bool m_quit;
